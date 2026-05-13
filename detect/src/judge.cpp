@@ -23,13 +23,13 @@ bool Judge::init(const std::string& log_dir) {
 
     log_file_.open(ss.str());
     if (!log_file_.is_open()) {
-        std::cerr << "[Judge] Failed to open: " << ss.str() << std::endl;
+        std::cerr << "[Judge] 打不开  " << ss.str() << std::endl;
         return false;
     }
 
     log_file_ << "frame_id,count,x1,y1,x2,y2,x3,y3,x4,y4" << std::endl;
     opened_ = true;
-    std::cout << "[Judge] Logging to: " << ss.str() << std::endl;
+    std::cout << "[Judge] 已日志 " << ss.str() << std::endl;
     return true;
 }
 

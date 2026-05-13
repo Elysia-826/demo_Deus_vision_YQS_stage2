@@ -7,7 +7,7 @@ void TargetSelector::init(const cv::Size& frame_size) {
 FrameResult TargetSelector::update(const std::vector<ArmorObject>& detections) {
     // TODO: 从 detections 中提取最多 4 个装甲板的中心点填入 result
 
-
+    (void)detections;
 
     FrameResult result;
     return result;
