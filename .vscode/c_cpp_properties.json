@@ -6,7 +6,8 @@
             "intelliSenseMode": "windows-msvc-x64",
             "includePath": [
                 "${workspaceFolder}/detect/include",
-                "C:\\Users\\YQS\\OneDrive\\文档\\GitHub\\demo_Deus_vision_YQS_stage2\\detect\\include"
+                "C:\\Users\\YQS\\OneDrive\\文档\\GitHub\\demo_Deus_vision_YQS_stage2\\detect\\include",
+                "D:/opencv/build/include"
             ],
             "defines": [
                 "_DEBUG",
