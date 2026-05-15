@@ -56,6 +56,10 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
 )
 
-target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -O2)
+# 根据编译器自动选择合适选项
+target_compile_options(${PROJECT_NAME} PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /O2>
+    $<$<NOT $<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -O2>
+)
 
 message(STATUS "OpenCV version: ${OpenCV_VERSION}")
