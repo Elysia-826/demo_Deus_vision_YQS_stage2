@@ -53,7 +53,7 @@ cv::Mat ArmorDetector::preprocess(const cv::Mat& frame) {
     resized.copyTo(letterbox(cv::Rect(dx, dy, new_w, new_h)));
 
     // 保存 letterbox 参数，供后处理时还原坐标
-    letterbox_params_ = {scale, dx, dy, frame.size()};
+    letterbox_params_ = {scale, static_cast<float>(dx), static_cast<float>(dy), frame.size()};
 
     // --- 第二步：转换为 blob ---
     // blobFromImage 完成三件事：
