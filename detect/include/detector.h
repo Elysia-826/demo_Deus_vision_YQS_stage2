@@ -39,7 +39,6 @@ private:
     float nms_threshold_ = 0.45f;
     cv::Size input_size_ = {640, 640};
     std::vector<std::string> class_names_;
-    private:
     struct LetterBoxParams {
         float scale = 1.0f;
         float dx = 0;
