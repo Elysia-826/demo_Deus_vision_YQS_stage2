@@ -18,46 +18,70 @@
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
+    // ========== 1. 初始化检测器 ==========
+    ArmorDetector detector;
+    std::string model_path = "C:\\Users\\YQS\\OneDrive\\文档\\GitHub\\demo_Deus_vision_YQS_stage2\\detect\\best.onnx";   // 模型文件路径（放在 exe 同目录）
+    float conf_threshold = 0.5f;            // 可根据实际情况调整
+    float nms_threshold  = 0.45f;
+    cv::Size input_size(640, 640);
+
+    if (!detector.init(model_path, conf_threshold, nms_threshold, input_size)) {
+        std::cerr << "Failed to initialize detector!" << std::endl;
+        return -1;
+    }
+    // ========== 2. 初始化其他模块 ==========
+    TargetSelector selector;
+    Visualizer visualizer;
 
 #ifdef ENABLE_JUDGE
     Judge judge;
-    judge.init("assets/log");
+    judge.init("assets/log");// 日志输出目录
 #endif
 
 #ifdef ENABLE_EVALUATE
     Evaluator evaluator;
-    evaluator.init("assets/std.csv");
+    evaluator.init("assets/std.csv");// 标准答案文件
 #endif
 
     ArmorDetector detector;
     TargetSelector selector;
     [[maybe_unused]] Visualizer vis;
 
-    // TODO: 初始化检测器 (加载模型)
-
-
-
-    // TODO: 打开输入源 (图片/视频/摄像头)
+    // ========== 3. 打开输入源（视频或摄像头） ==========
     cv::VideoCapture cap;
+    std::string video_path = "assets/test_video.mp4";
+    cap.open(video_path);
+    if (!cap.isOpened()) {
+        std::cerr << "Failed to open video, trying camera 0..." << std::endl;
+        cap.open(0);
+        if (!cap.isOpened()) {
+            std::cerr << "Failed to open camera!" << std::endl;
+            return -1;
+        }
+    }
 
-
-
+    // ========== 4. 主循环 ==========
     cv::Mat frame;
     int total_frames = 0;
     int detected_frames = 0;
     float total_time_ms = 0.0f;
+    int frame_id = 0;
+    auto start_time = std::chrono::steady_clock::now();
+    int frame_count = 0;
 
     while (cap.read(frame)) {
         if (frame.empty()) break;
         total_frames++;
-
+        frame_id++;
+        frame_count++;
         auto t0 = std::chrono::high_resolution_clock::now();
 
-        // TODO: 执行检测，获取结果列表
+        // 4.1 执行检测，获取结果列表
         std::vector<ArmorObject> detections;
+        detector.detect(frame, detections);
 
 
-
+        // 4.2 提取中心点
         FrameResult result = selector.update(detections);
 
         auto t1 = std::chrono::high_resolution_clock::now();
@@ -67,6 +91,7 @@ int main(int argc, char** argv) {
             detected_frames++;
         }
 
+        // 4.3 评估（若启用）
 #ifdef ENABLE_JUDGE
         judge.log(total_frames, result);
 #endif
@@ -75,11 +100,21 @@ int main(int argc, char** argv) {
         evaluator.submit(total_frames, result);
 #endif
 
-        // TODO: 可视化绘制与显示
+         // 4.4 可视化
+        visualizer.drawDetections(frame, detections);
+        visualizer.drawCenters(frame, result);
 
+        // 4.5 计算 FPS
+        auto now = std::chrono::steady_clock::now();
+        float elapsed = std::chrono::duration<float>(now - start_time).count();
+        float fps = elapsed > 0 ? frame_count / elapsed : 0;
+        visualizer.drawHUD(frame, fps, result.detected_count);
 
-
+        // 4.6 显示
+        cv::imshow("Armor Detection", frame);
+        if (cv::waitKey(1) == 27) break;   // ESC 退出
     }
+
 
     cap.release();
     cv::destroyAllWindows();
@@ -95,6 +130,10 @@ int main(int argc, char** argv) {
         ? (1000.0f * total_frames / total_time_ms)
         : 0.0f;
 
+         // ========== 5. 输出最终结果 ==========
+    auto end_time = std::chrono::steady_clock::now();
+    float total_elapsed = std::chrono::duration<float>(end_time - start_time).count();
+    float avg_fps = total_elapsed > 0 ? frame_count / total_elapsed : 0;
     std::cout << "\n====== Result ======" << std::endl;
     std::cout << "Total frames:    " << total_frames << std::endl;
     std::cout << "Detected frames: " << detected_frames << std::endl;
@@ -106,6 +145,10 @@ int main(int argc, char** argv) {
 #ifdef ENABLE_EVALUATE
     evaluator.printResult(avg_fps);
 #endif
+#ifdef ENABLE_JUDGE
+    judge.close();
+#endif
 
+    cv::destroyAllWindows();
     return 0;
 }
