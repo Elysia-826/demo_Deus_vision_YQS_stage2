@@ -39,4 +39,11 @@ private:
     float nms_threshold_ = 0.45f;
     cv::Size input_size_ = {640, 640};
     std::vector<std::string> class_names_;
+    private:
+    struct LetterBoxParams {
+        float scale = 1.0f;
+        float dx = 0;
+        float dy = 0;
+        cv::Size original_size;
+    } letterbox_params_;//保存预处理参数，供后处理还原坐标用
 };
