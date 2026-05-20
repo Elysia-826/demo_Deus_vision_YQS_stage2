@@ -8,8 +8,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ============================================================
 # 开关
 # ============================================================
-option(ENABLE_JUDGE "Enable judge logging module" ON)
-option(ENABLE_EVALUATE "Enable evaluate module (requires ENABLE_JUDGE)" ON)
+option(ENABLE_JUDGE "Enable judge logging module" OFF)
+option(ENABLE_EVALUATE "Enable evaluate module (requires ENABLE_JUDGE)" OFF)
 
 # ============================================================
 # 依赖
