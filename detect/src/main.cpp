@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
 
     // ========== 3. 打开输入源（视频或摄像头） ==========
     cv::VideoCapture cap;
-    std::string video_path = "assets/test_video.mp4";
+    std::string video_path = "C:\\Users\\YQS\\OneDrive\\文档\\GitHub\\demo_Deus_vision_YQS_stage2\\detect\\assets\\RM_TestVideo.mp4";
     cap.open(video_path);
     if (!cap.isOpened()) {
         std::cerr << "Failed to open video, trying camera 0..." << std::endl;
