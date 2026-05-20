@@ -16,8 +16,8 @@
 #include <chrono>
 
 int main(int argc, char** argv) {
-    /*(void)argc;
-    (void)argv;*/
+    (void)argc;
+    (void)argv;
     // ========== 1. 初始化检测器 ==========
     ArmorDetector detector;
     std::string model_path = "C:\\Users\\YQS\\OneDrive\\文档\\GitHub\\demo_Deus_vision_YQS_stage2\\detect\\best.onnx";   // 模型文件路径（放在 exe 同目录）
@@ -43,9 +43,9 @@ int main(int argc, char** argv) {
     evaluator.init("assets/std.csv");// 标准答案文件
 #endif
 
-    ArmorDetector detector;
+    /*ArmorDetector detector;
     TargetSelector selector;
-    [[maybe_unused]] Visualizer vis;
+    [[maybe_unused]] Visualizer vis;*/
 
     // ========== 3. 打开输入源（视频或摄像头） ==========
     cv::VideoCapture cap;
@@ -62,19 +62,18 @@ int main(int argc, char** argv) {
 
     // ========== 4. 主循环 ==========
     cv::Mat frame;
-    int total_frames = 0;
-    int detected_frames = 0;
-    float total_time_ms = 0.0f;
-    int frame_id = 0;
+    int total_frames = 0;//帧计数器,也用于fps计算
+    int detected_frames = 0;//检测到装甲板的帧数
+    float total_time_ms = 0.0f;//累计推理耗时(毫秒)
+    int frame_id = 0;//当前帧的绝对序号,从1开始递增
     auto start_time = std::chrono::steady_clock::now();
-    int frame_count = 0;
 
     while (cap.read(frame)) {
         if (frame.empty()) break;
         total_frames++;
-        frame_id++;
-        frame_count++;
-        auto t0 = std::chrono::high_resolution_clock::now();
+        frame_id++;// frame_id 和 total_frames 同步增长
+        auto t0 = std::chrono::high_resolution_clock::now();// 单帧推理计时开始
+
 
         // 4.1 执行检测，获取结果列表
         std::vector<ArmorObject> detections;
@@ -91,13 +90,18 @@ int main(int argc, char** argv) {
             detected_frames++;
         }
 
-        // 4.3 评估（若启用）
+        // 4.3 评估 & 日志
+// 这里必须传入 frame_id（视频绝对帧序号），而不是 total_frames（处理帧计数）。
+// 原因：
+//   - std.csv 中的帧号是绝对帧 ID，evaluator 需要精确匹配，传入 total_frames 会导致错位。
+//   - frame_id 是帧的“标识”，total_frames 是处理的“统计”，两者职责不同。
+//   - 如果将来跳帧或从中间开始处理，frame_id 依然能与标准答案对齐，total_frames 则不能。
 #ifdef ENABLE_JUDGE
-        judge.log(total_frames, result);
+        judge.log(frame_id, result);
 #endif
 
 #ifdef ENABLE_EVALUATE
-        evaluator.submit(total_frames, result);
+        evaluator.submit(frame_id, result);
 #endif
 
          // 4.4 可视化
@@ -107,7 +111,7 @@ int main(int argc, char** argv) {
         // 4.5 计算 FPS
         auto now = std::chrono::steady_clock::now();
         float elapsed = std::chrono::duration<float>(now - start_time).count();
-        float fps = elapsed > 0 ? frame_count / elapsed : 0;
+        float fps = elapsed > 0 ? total_frames / elapsed : 0;
         visualizer.drawHUD(frame, fps, result.detected_count);
 
         // 4.6 显示
@@ -117,11 +121,11 @@ int main(int argc, char** argv) {
 
 
     cap.release();
-    cv::destroyAllWindows();
+    //cv::destroyAllWindows();
 
-#ifdef ENABLE_JUDGE
+/*#ifdef ENABLE_JUDGE
     judge.close();
-#endif
+#endif*/
 
     float detection_rate = (total_frames > 0)
         ? static_cast<float>(detected_frames) / static_cast<float>(total_frames)
@@ -133,7 +137,7 @@ int main(int argc, char** argv) {
          // ========== 5. 输出最终结果 ==========
     auto end_time = std::chrono::steady_clock::now();
     float total_elapsed = std::chrono::duration<float>(end_time - start_time).count();
-    float avg_fps = total_elapsed > 0 ? frame_count / total_elapsed : 0;
+    float avg_fps = total_elapsed > 0 ? total_frames / total_elapsed : 0;
     std::cout << "\n====== Result ======" << std::endl;
     std::cout << "Total frames:    " << total_frames << std::endl;
     std::cout << "Detected frames: " << detected_frames << std::endl;
