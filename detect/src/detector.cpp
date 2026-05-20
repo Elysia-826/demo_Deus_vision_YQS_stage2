@@ -7,7 +7,7 @@ bool ArmorDetector::init(const std::string& model_path,
                          float conf_threshold,
                          float nms_threshold,
                          const cv::Size& input_size) {
-    (void)model_path;
+    //(void)model_path;
     // 1. 将用户传入的参数保存到成员变量，后续推理时使用
     conf_threshold_ = conf_threshold; // 置信度阈值：低于此值的检测框会被丢弃
     nms_threshold_ = nms_threshold;// NMS 的 IoU 阈值：重叠高于此值的框将被合并
@@ -71,8 +71,8 @@ cv::Mat ArmorDetector::preprocess(const cv::Mat& frame) {
 
     return blob;
 
-    (void)frame;
-    return cv::Mat();
+    //(void)frame;
+    //return cv::Mat();
 }
 
 
@@ -180,7 +180,7 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         results.push_back(obj);
     }
 
-    (void)output;
+    /*(void)output;
     (void)frame_size;
-    (void)results;
+    (void)results;*/
 }

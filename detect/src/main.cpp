@@ -16,8 +16,8 @@
 #include <chrono>
 
 int main(int argc, char** argv) {
-    (void)argc;
-    (void)argv;
+    /*(void)argc;
+    (void)argv;*/
     // ========== 1. 初始化检测器 ==========
     ArmorDetector detector;
     std::string model_path = "C:\\Users\\YQS\\OneDrive\\文档\\GitHub\\demo_Deus_vision_YQS_stage2\\detect\\best.onnx";   // 模型文件路径（放在 exe 同目录）
