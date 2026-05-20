@@ -104,12 +104,15 @@ bool ArmorDetector::detect(const cv::Mat& frame, std::vector<ArmorObject>& resul
 void ArmorDetector::postprocess(const cv::Mat& output,
                                 const cv::Size& frame_size,
                                 std::vector<ArmorObject>& results) {
-     // ★ 打印输出张量形状
-    std::cout << "Output dims: " << output.size[0] << " " << output.size[1] << " " << output.size[2] << std::endl;
-
+    
+    // 输出张量形状: [1, 6, 8400]
+    //   8400 = 80×80 + 40×40 + 20×20  (三个检测头 anchor 总数)
+    //   6 个通道: cx, cy, w, h, obj_conf, 以及可能的类别置信度
     const int num_detections = output.size[2];   // 8400
-    const int num_channels  = output.size[1];    // 这里会打印出来，看是否等于6
-    float* data = (float*)output.data;
+    const int num_channels  = output.size[1];    // 6
+    float* data = (float*)output.data;           // 获取原始数据指针
+    // ★ 打印输出张量形状
+    std::cout << "Output dims: " << output.size[0] << " " << output.size[1] << " " << output.size[2] << std::endl;
 
     // ★ 如果通道数不是6，打印实际通道数
     int actual_channels = output.size[1];
@@ -126,12 +129,8 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         }
         std::cout << std::endl;
     }
-    // 输出张量形状: [1, 6, 8400]
-    //   8400 = 80×80 + 40×40 + 20×20  (三个检测头 anchor 总数)
-    //   6 个通道: cx, cy, w, h, obj_conf, 以及可能的类别置信度
-    const int num_detections = output.size[2];   // 8400
-    const int num_channels  = output.size[1];    // 6
-    float* data = (float*)output.data;           // 获取原始数据指针
+
+
 
     // 从成员变量中取出预处理时保存的 letterbox 参数
     float scale  = letterbox_params_.scale;
