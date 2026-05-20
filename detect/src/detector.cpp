@@ -134,7 +134,8 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         float obj_conf = row[4];       // 物体存在的置信度
 
         // 置信度过滤：低于阈值的直接丢弃
-        if (obj_conf < conf_threshold_) continue;
+        // 置信度过滤：先做一次强力过滤，排除明显无效的检测
+        if (obj_conf < 0.3f) continue;   // 0.3 比默认的 0.5 更低，但能过滤掉大量噪声
 
         // ---------- 坐标还原 ----------
         // 模型输出的是在 640×640 letterbox 画布上的坐标。
