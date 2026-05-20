@@ -152,6 +152,9 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         bw = std::min(bw, img_w - x1);
         bh = std::min(bh, img_h - y1);
 
+        // 过滤掉宽或高为 0 的无效框
+        if (bw <= 0 || bh <= 0) continue;
+
         // 将浮点坐标转换为整数矩形（向下取整左上，限制宽高为非负整数）
         int ix = (int)std::max(0.0f, x1);
         int iy = (int)std::max(0.0f, y1);
