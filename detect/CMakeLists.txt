@@ -60,10 +60,11 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
 )
 
-# 根据编译器自动选择合适选项
-target_compile_options(${PROJECT_NAME} PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /O2>
-    $<$<NOT $<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -O2>
+# 根据编译器选择合适选项
+# 仅 MSVC 编译时启用 /utf-8 避免中文编码警告
+if(MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE /utf-8)
+endif()
 )
 
 message(STATUS "OpenCV version: ${OpenCV_VERSION}")
