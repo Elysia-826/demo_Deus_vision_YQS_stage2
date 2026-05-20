@@ -27,6 +27,6 @@ FrameResult TargetSelector::update(const std::vector<ArmorObject>& detections) {
 
     (void)detections;
 
-    FrameResult result;
+    //FrameResult result;
     return result;
 }
