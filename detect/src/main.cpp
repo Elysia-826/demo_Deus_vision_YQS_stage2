@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
     (void)argv;
     // ========== 1. 初始化检测器 ==========
     ArmorDetector detector;
-    std::string model_path = "C:\\Users\\YQS\\OneDrive\\文档\\GitHub\\demo_Deus_vision_YQS_stage2\\detect\\build\\armor_detect.dir\\Release\\best.onnx";   // 模型文件路径（放在 exe 同目录）
+    std::string model_path = "C:\\Users\\YQS\\Desktop\\demo_Deus_vision_YQS_stage2\\best.onnx";   // 
     float conf_threshold = 0.5f;            // 可根据实际情况调整
     float nms_threshold  = 0.45f;
     cv::Size input_size(640, 640);
@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
 
     // ========== 3. 打开输入源（视频或摄像头） ==========
     cv::VideoCapture cap;
-    std::string video_path = "C:\\Users\\YQS\\OneDrive\\文档\\GitHub\\demo_Deus_vision_YQS_stage2\\detect\\assets\\RM_TestVideo.mp4";
+    std::string video_path = "C:\\Users\\YQS\\Desktop\\demo_Deus_vision_YQS_stage2\\detect\\assets\\RM_TestVideo.mp4";
     cap.open(video_path);
     if (!cap.isOpened()) {
         std::cerr << "Failed to open video, trying camera 0..." << std::endl;
