@@ -130,9 +130,6 @@ int main(int argc, char** argv) {
     float detection_rate = (total_frames > 0)
         ? static_cast<float>(detected_frames) / static_cast<float>(total_frames)
         : 0.0f;
-    float avg_fps = (total_time_ms > 0)
-        ? (1000.0f * total_frames / total_time_ms)
-        : 0.0f;
 
          // ========== 5. 输出最终结果 ==========
     auto end_time = std::chrono::steady_clock::now();
