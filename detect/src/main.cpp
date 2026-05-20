@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
     (void)argv;
     // ========== 1. 初始化检测器 ==========
     ArmorDetector detector;
-    std::string model_path = "C:\\Users\\YQS\\OneDrive\\文档\\GitHub\\demo_Deus_vision_YQS_stage2\\detect\\best.onnx";   // 模型文件路径（放在 exe 同目录）
+    std::string model_path = "C:\\Users\\YQS\\OneDrive\\文档\\GitHub\\demo_Deus_vision_YQS_stage2\\detect\\build\\armor_detect.dir\\Release\\best.onnx";   // 模型文件路径（放在 exe 同目录）
     float conf_threshold = 0.5f;            // 可根据实际情况调整
     float nms_threshold  = 0.45f;
     cv::Size input_size(640, 640);
