@@ -178,6 +178,7 @@ void ArmorDetector::postprocess(const cv::Mat& output,
             obj.bbox.y + obj.bbox.height / 2.0f
         );
         results.push_back(obj);
+        std::cout << "Detected " << results.size() << " objects" << std::endl;
     }
 
     /*(void)output;
