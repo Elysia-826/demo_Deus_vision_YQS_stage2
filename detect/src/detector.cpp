@@ -184,7 +184,9 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         results.push_back(obj);
         std::cout << "Detected " << results.size() << " objects" << std::endl;
     }
-
+    
+    // NMS 之后
+    std::cout << "After NMS: " << indices.size() << " objects" << std::endl;
     /*(void)output;
     (void)frame_size;
     (void)results;*/
