@@ -99,112 +99,135 @@ bool ArmorDetector::detect(const cv::Mat& frame, std::vector<ArmorObject>& resul
 }
 
 // ============================================================
-// 后处理：解析模型输出 → 坐标还原 → NMS → 填充 ArmorObject
+// 后处理（兼容两种 ONNX 模型格式）
+//
+// 与原始框架的区别：
+//   1. 增加了对“带内嵌 NMS 的模型”的支持（输出 [1, 7, 300]）
+//   2. 原始模型路径下增加了无效框过滤和整数转换
+//   3. 函数签名和输出格式与原始框架完全兼容
 // ============================================================
 void ArmorDetector::postprocess(const cv::Mat& output,
                                 const cv::Size& frame_size,
                                 std::vector<ArmorObject>& results) {
-    
-    // 输出张量形状: [1, 6, 8400]
-    //   8400 = 80×80 + 40×40 + 20×20  (三个检测头 anchor 总数)
-    //   6 个通道: cx, cy, w, h, obj_conf, 以及可能的类别置信度
-    const int num_detections = output.size[2];   // 8400
-    const int num_channels  = output.size[1];    // 6
-    float* data = (float*)output.data;           // 获取原始数据指针
-    // ★ 打印输出张量形状
-    std::cout << "Output dims: " << output.size[0] << " " << output.size[1] << " " << output.size[2] << std::endl;
+    const int num_detections = output.size[2];
+    const int num_channels  = output.size[1];
+    float* data = (float*)output.data;
 
-    // ★ 如果通道数不是6，打印实际通道数
-    int actual_channels = output.size[1];
-    if (actual_channels != 6) {
-        std::cout << "Actual channels: " << actual_channels << std::endl;
-    }
+    // ============================================================
+    // 路径 A：带内嵌 NMS 的模型（输出形状 [1, N, 300]，N 通常为 6 或 7）
+    //   每行格式：[x1, y1, x2, y2, conf, cls] 或 [x1, y1, x2, y2, conf, cls_conf, cls]
+    //   坐标已是原始图像坐标，无需 letterbox 还原，无需手动 NMS
+    // ============================================================
+    if (num_channels <= 7) {
+        for (int i = 0; i < num_detections; i++) {
+            float* row = data + i * num_channels;
 
-    // ★ 打印前2个检测点的前10个通道值
-    for (int i = 0; i < 2 && i < num_detections; i++) {
-        float* row = data + i * actual_channels;
-        std::cout << "Detection " << i << ": ";
-        for (int j = 0; j < std::min(10, actual_channels); j++) {
-            std::cout << row[j] << " ";
+            float x1 = row[0];
+            float y1 = row[1];
+            float x2 = row[2];
+            float y2 = row[3];
+            float obj_conf = row[4];
+
+            // 置信度过滤
+            if (obj_conf < conf_threshold_) continue;
+
+            // 计算宽高
+            float bw = x2 - x1;
+            float bh = y2 - y1;
+
+            // 边界裁剪
+            x1 = std::max(0.0f, x1);
+            y1 = std::max(0.0f, y1);
+            bw = std::min(bw, (float)frame_size.width - x1);
+            bh = std::min(bh, (float)frame_size.height - y1);
+
+            // 无效框过滤
+            if (bw <= 0 || bh <= 0) continue;
+
+            ArmorObject obj;
+            obj.bbox       = cv::Rect2f(x1, y1, bw, bh);
+            obj.confidence = obj_conf;
+            obj.class_id   = (num_channels >= 7) ? (int)row[6] : 0;
+            obj.center     = cv::Point2f(x1 + bw / 2.0f, y1 + bh / 2.0f);
+            results.push_back(obj);
         }
-        std::cout << std::endl;
+        return;
     }
 
+    // ============================================================
+    // 路径 B：原始 YOLOv11 模型（输出形状 [1, 10, 8400]）
+    //   每行格式：[cx, cy, w, h, obj_conf, cls0, cls1, cls2, cls3, cls4]
+    //   坐标是 640×640 letterbox 坐标，需还原 + 手动 NMS
+    // ============================================================
 
-
-    // 从成员变量中取出预处理时保存的 letterbox 参数
+    // 读取 letterbox 参数（preprocess 时保存）
     float scale  = letterbox_params_.scale;
     float dx     = letterbox_params_.dx;
     float dy     = letterbox_params_.dy;
     float img_w  = (float)frame_size.width;
     float img_h  = (float)frame_size.height;
 
-    // 使用整数矩形以匹配 cv::dnn::NMSBoxes 的可用重载
-    std::vector<cv::Rect> boxes;      // 存放还原后的框坐标（整数）
-    std::vector<float> confidences;     // 存放每个框的置信度
+    std::vector<cv::Rect> boxes;      // 整数矩形框
+    std::vector<float> confidences;   // 置信度
 
-    // 遍历所有 8400 个候选框
     for (int i = 0; i < num_detections; i++) {
-        float* row = data + i * num_channels;   // 指向第 i 个检测点的数据
+        float* row = data + i * num_channels;
 
-        // 从输出中读取：中心点 xy、宽高 wh、目标性得分 obj_conf
-        float cx = row[0];
-        float cy = row[1];
-        float w  = row[2];
-        float h  = row[3];
-        float obj_conf = row[4];       // 物体存在的置信度
+        // 读取 anchor 参数
+        float cx = row[0];           // 中心点 X（640×640 画布）
+        float cy = row[1];           // 中心点 Y
+        float w  = row[2];           // 宽度
+        float h  = row[3];           // 高度
+        float obj_conf = row[4];     // 目标置信度
 
-        // 置信度过滤：低于阈值的直接丢弃
-        // 置信度过滤：先做一次强力过滤，排除明显无效的检测
-        if (obj_conf < 0.3f) continue;   // 0.3 比默认的 0.5 更低，但能过滤掉大量噪声
+        // 置信度过滤
+        if (obj_conf < conf_threshold_) continue;
 
-        // ---------- 坐标还原 ----------
-        // 模型输出的是在 640×640 letterbox 画布上的坐标。
-        // 需要还原到原始图像尺寸。
-        // 还原公式：x_original = (x_letterbox - dx) / scale
+        // 坐标还原：从 letterbox 坐标 → 原始图像坐标
+        // 公式：x_original = (x_letterbox - dx) / scale
         float x1 = (cx - w / 2.0f - dx) / scale;
         float y1 = (cy - h / 2.0f - dy) / scale;
         float bw = w / scale;
         float bh = h / scale;
 
-        // 边界裁剪：确保框不超出图像范围
+        // 边界裁剪
         x1 = std::max(0.0f, x1);
         y1 = std::max(0.0f, y1);
         bw = std::min(bw, img_w - x1);
         bh = std::min(bh, img_h - y1);
 
-        // 过滤掉宽或高为 0 的无效框
+        // 无效框过滤
         if (bw <= 0 || bh <= 0) continue;
 
-        // 将浮点坐标转换为整数矩形（向下取整左上，限制宽高为非负整数）
+        // 转为整数矩形（更符合像素坐标语义）
         int ix = (int)std::max(0.0f, x1);
         int iy = (int)std::max(0.0f, y1);
         int iw = (int)std::max(0.0f, bw);
         int ih = (int)std::max(0.0f, bh);
+
         boxes.emplace_back(ix, iy, iw, ih);
         confidences.push_back(obj_conf);
     }
 
-    // ---------- NMS (非极大值抑制) ----------
-    // 同一个物体可能被多个 anchor 框检测到，NMS 保留最佳框，去除重叠框
-    std::vector<int> indices;       // 保存被保留框的索引
-    // 使用匹配的重载，指定 eta 和 top_k（默认 1.0f, 0）
-    cv::dnn::NMSBoxes(boxes, confidences, conf_threshold_, nms_threshold_, indices, 1.0f, 0);
+    // 手动 NMS（非极大值抑制）
+    std::vector<int> indices;
+    cv::dnn::NMSBoxes(boxes, confidences, conf_threshold_, nms_threshold_, indices);
 
-    // ---------- 填充结果 ----------
+    // 填充结果
     for (int idx : indices) {
         ArmorObject obj;
-        obj.bbox       = boxes[idx];               // 矩形框
-        obj.confidence = confidences[idx];          // 置信度
-        obj.class_id   = 0;                         // 类别 ID（暂未使用，可后续改进）
-        // 计算中心点：框左上角 + 宽高的一半
-        obj.center = cv::Point2f(
-            obj.bbox.x + obj.bbox.width  / 2.0f,
-            obj.bbox.y + obj.bbox.height / 2.0f
+        obj.bbox       = cv::Rect2f(boxes[idx]);
+        obj.confidence = confidences[idx];
+        obj.class_id   = 0;
+        obj.center     = cv::Point2f(
+            boxes[idx].x + boxes[idx].width  / 2.0f,
+            boxes[idx].y + boxes[idx].height / 2.0f
         );
         results.push_back(obj);
-        std::cout << "Detected " << results.size() << " objects" << std::endl;
     }
+
+        std::cout << "Detected " << results.size() << " objects" << std::endl;
+    
 
     // NMS 之后
     std::cout << "After NMS: " << indices.size() << " objects" << std::endl;
