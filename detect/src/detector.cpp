@@ -168,13 +168,17 @@ void ArmorDetector::postprocess(const cv::Mat& output,
     float img_w  = (float)frame_size.width;
     float img_h  = (float)frame_size.height;
 
-    // 指向各通道首地址
-    float* ch_cx = data + 0 * num_detections;
-    float* ch_cy = data + 1 * num_detections;
-    float* ch_w  = data + 2 * num_detections;
-    float* ch_h  = data + 3 * num_detections;
-    float* ch_obj = data + 4 * num_detections;
-    // 类别通道 5~9
+// 通道映射（已验证）
+    // 0:cx  1:cy  2:w  3:h  4:?  5:cls0  6:cls1  7:cls2  8:cls3  9:cls4
+    float* ch_cx   = data + 0 * num_detections;
+    float* ch_cy   = data + 1 * num_detections;
+    float* ch_w    = data + 2 * num_detections;
+    float* ch_h    = data + 3 * num_detections;
+    float* ch_cls0 = data + 5 * num_detections;  // 类别0置信度
+    float* ch_cls1 = data + 6 * num_detections;  // 类别1置信度
+    float* ch_cls2 = data + 7 * num_detections;  // 类别2置信度
+    float* ch_cls3 = data + 8 * num_detections;  // 类别3置信度
+    float* ch_cls4 = data + 9 * num_detections;  // 类别4置信度
 
     std::vector<cv::Rect> boxes;      // 整数矩形框
     std::vector<float> confidences;   // 置信度
@@ -187,7 +191,9 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         float cy = ch_cy[i];
         float w  = ch_w[i];
         float h  = ch_h[i];
-        float obj_conf = ch_obj[i];
+         // 置信度取各类别得分中的最大值
+        float obj_conf = std::max({ch_cls0[i], ch_cls1[i], ch_cls2[i],
+                                   ch_cls3[i], ch_cls4[i]});
 
         // 用 sigmoid 将 logits 转换为 0~1 的概率
         float obj_conf_sigmoid = 1.0f / (1.0f + std::exp(-obj_conf));
