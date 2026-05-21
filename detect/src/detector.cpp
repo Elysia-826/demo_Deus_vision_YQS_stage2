@@ -17,6 +17,9 @@ bool ArmorDetector::init(const std::string& model_path,
     // 2. 使用 OpenCV DNN 模块加载 ONNX 模型文件
     //    readNetFromONNX 会返回一个 cv::dnn::Net 对象，失败时内部为空
     net_ = cv::dnn::readNetFromONNX(model_path);
+    // 尝试设置 CUDA 后端
+    net_.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+    net_.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
     if (net_.empty()) {
         std::cerr << "Failed to load ONNX model: " << model_path << std::endl;
         return false;   // 加载失败，返回 false 通知调用者
