@@ -2,6 +2,7 @@
 #include <opencv2/dnn.hpp>    // 提供 cv::dnn::Net, blobFromImage, NMSBoxes 等
 #include <algorithm>          // std::min, std::max
 #include <iostream>           // std::cerr, std::cout
+#include <cmath>              // std::sqrt, std::pow
 
 bool ArmorDetector::init(const std::string& model_path,
                          float conf_threshold,
@@ -168,7 +169,7 @@ void ArmorDetector::postprocess(const cv::Mat& output,
     float img_h  = (float)frame_size.height;
 
     // 指向各通道首地址
-    float* ch_cx = data;
+    float* ch_cx = data + 0 * num_detections;
     float* ch_cy = data + 1 * num_detections;
     float* ch_w  = data + 2 * num_detections;
     float* ch_h  = data + 3 * num_detections;
@@ -187,6 +188,12 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         float w  = ch_w[i];
         float h  = ch_h[i];
         float obj_conf = ch_obj[i];
+
+        // 用 sigmoid 将 logits 转换为 0~1 的概率
+        float obj_conf_sigmoid = 1.0f / (1.0f + std::exp(-obj_conf));
+
+        // 置信度过滤：用转换后的概率值进行判断
+        if (obj_conf_sigmoid < conf_threshold_) continue;
 
         // 置信度过滤
         if (obj_conf < conf_threshold_) continue;
