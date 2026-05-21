@@ -109,8 +109,8 @@ bool ArmorDetector::detect(const cv::Mat& frame, std::vector<ArmorObject>& resul
 void ArmorDetector::postprocess(const cv::Mat& output,
                                 const cv::Size& frame_size,
                                 std::vector<ArmorObject>& results) {
-    const int num_detections = output.size[2];
-    const int num_channels  = output.size[1];
+    const int num_detections = output.size[2]; //8400(原始)或300(带NMS)
+    const int num_channels  = output.size[1]; //10(原始)或7(带NMS)
     float* data = (float*)output.data;
 
     // ============================================================
@@ -167,6 +167,14 @@ void ArmorDetector::postprocess(const cv::Mat& output,
     float img_w  = (float)frame_size.width;
     float img_h  = (float)frame_size.height;
 
+    // 指向各通道首地址
+    float* ch_cx = data;
+    float* ch_cy = data + 1 * num_detections;
+    float* ch_w  = data + 2 * num_detections;
+    float* ch_h  = data + 3 * num_detections;
+    float* ch_obj = data + 4 * num_detections;
+    // 类别通道 5~9
+
     std::vector<cv::Rect> boxes;      // 整数矩形框
     std::vector<float> confidences;   // 置信度
 
@@ -174,11 +182,11 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         float* row = data + i * num_channels;
 
         // 读取 anchor 参数
-        float cx = row[0];           // 中心点 X（640×640 画布）
-        float cy = row[1];           // 中心点 Y
-        float w  = row[2];           // 宽度
-        float h  = row[3];           // 高度
-        float obj_conf = row[4];     // 目标置信度
+        float cx = ch_cx[i];
+        float cy = ch_cy[i];
+        float w  = ch_w[i];
+        float h  = ch_h[i];
+        float obj_conf = ch_obj[i];
 
         // 置信度过滤
         if (obj_conf < conf_threshold_) continue;
