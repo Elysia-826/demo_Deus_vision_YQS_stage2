@@ -26,9 +26,10 @@ bool ArmorDetector::init(const std::string& model_path,
         session_options.AppendExecutionProvider_CUDA(cuda_options);
         std::cout << "Using CUDA inference" << std::endl;
 
-        // 将 std::string 转换为 std::wstring（宽字符），以兼容 Windows 版 ONNX Runtime
-        std::wstring w_model_path(model_path.begin(), model_path.end());
-        session_ = std::make_unique<Ort::Session>(*env_, w_model_path.c_str(), session_options);
+        // 将模型路径转为宽字符串
+        std::wstring wmodel(model_path.begin(), model_path.end());
+        // 直接用 reset 构造，避免模板推导错误
+        session_.reset(new Ort::Session(*env_, wmodel.c_str(), session_options));
         std::cout << "Model loaded successfully!" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Failed to initialize ONNX Runtime: " << e.what() << std::endl;
