@@ -56,8 +56,14 @@ if(MSVC)
 endif()
 add_executable(${PROJECT_NAME} ${SOURCES})
 
+# 在 target_link_libraries 之前添加 ONNX Runtime 路径
+set(ONNXRUNTIME_ROOT "C:\\onnxruntime-win-x64-gpu-1.19.0")
+include_directories(${ONNXRUNTIME_ROOT}/include)
+link_directories(${ONNXRUNTIME_ROOT}/lib)
+
 target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
+    onnxruntime
 )
 
 # 根据编译器选择合适选项

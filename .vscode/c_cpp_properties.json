@@ -4,7 +4,8 @@
             "name": "Win32",
             "includePath": [
                 "${workspaceFolder}/detect/include",
-                "D:/opencv/build/include"
+                "D:/opencv/build/include",
+                "C:/onnxruntime-win-x64-gpu-1.19.0/include"
             ],
             "defines": [
                 "ENABLE_JUDGE",
