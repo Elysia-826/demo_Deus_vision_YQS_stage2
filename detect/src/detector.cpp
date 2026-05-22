@@ -30,11 +30,17 @@ bool ArmorDetector::init(const std::string& model_path,
             cuda_options.device_id = 0; // 默认使用0号显卡
             // 优化比赛时的显存分配策略，避免突发掉帧
             cuda_options.arena_extend_strategy = 0; 
+
+            // ====== 【核心注入：强迫 ORT 必须使用显卡硬件算子】 ======
+            // 强制启用 cuDNN 卷积算法穷举搜索，激活 cuDNN 深度加速
+            cuda_options.cudnn_conv_algo_search = OrtCudnnConvAlgoSearchExhaustive; 
+            // ========================================================
             
             session_options.AppendExecutionProvider_CUDA(cuda_options);
             std::cout << "[SUCCESS] Using CUDA inference for RoboMaster Armor Detect." << std::endl;
         } catch (const std::exception& cuda_ex) {
             std::cerr << "[WARNING] CUDA 注册失败，自动回退到纯 CPU 模式! 原因: " << cuda_ex.what() << std::endl;
+            return false; // 直接拦截，不给它用 CPU 苟活的机会
         }
 
         // 2. 基本图优化配置
