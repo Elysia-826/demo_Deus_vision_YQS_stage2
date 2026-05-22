@@ -18,7 +18,7 @@ option(ENABLE_EVALUATE "Enable evaluate module (requires ENABLE_JUDGE)" OFF)
 find_package(OpenCV 4.5 REQUIRED)
 
 # 2. 设置 ONNX Runtime 路径
-set(ONNXRUNTIME_DIR "C:\\onnxruntime-win-x64-gpu-1.19.0")
+set(ONNXRUNTIME_DIR "C:\\onnxruntime-win-x64-gpu-1.26.0")
 
 # 3. 统一包含头文件目录
 include_directories(
@@ -83,16 +83,20 @@ target_link_libraries(${PROJECT_NAME}
 # ============================================================
 # POST_BUILD 自动化黑科技：自动复制 ONNX Runtime 的 GPU 动态库到 exe 目录
 # ============================================================
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+add_custom_command(TARGET armor_detect POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${ONNXRUNTIME_DIR}/lib/onnxruntime.dll"
-    $<TARGET_FILE_DIR:${PROJECT_NAME}>
+    "$<TARGET_FILE_DIR:armor_detect>"
 )
-
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+add_custom_command(TARGET armor_detect POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${ONNXRUNTIME_DIR}/lib/onnxruntime_providers_cuda.dll"
-    $<TARGET_FILE_DIR:${PROJECT_NAME}>
+    "$<TARGET_FILE_DIR:armor_detect>"
+)
+add_custom_command(TARGET armor_detect POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${ONNXRUNTIME_DIR}/lib/onnxruntime_providers_shared.dll"
+    "$<TARGET_FILE_DIR:armor_detect>"
 )
 
 # ============================================================
