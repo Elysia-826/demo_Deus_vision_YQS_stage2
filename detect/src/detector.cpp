@@ -90,6 +90,10 @@ bool ArmorDetector::detect(const cv::Mat& frame, std::vector<ArmorObject>& resul
     results.clear();
     if (frame.empty() || !session_) return false;
 
+    // 定义计时变量
+    int64 t_start = cv::getTickCount();
+    int64 t_pre_end, t_infer_end, t_post_end;
+
     cv::Mat blob = preprocess(frame);
 
     // 1. 准备输入张量与内存信息 (使用 OrtArenaAllocator 允许 ORT 内部管理 GPU 与 CPU 的高效映射)
@@ -109,7 +113,9 @@ bool ArmorDetector::detect(const cv::Mat& frame, std::vector<ArmorObject>& resul
         auto output_tensors = session_->Run(Ort::RunOptions{nullptr},
                                             input_names, &input_tensor, 1,
                                             output_names, 1);
+        t_infer_end = cv::getTickCount(); // 记录模型推理结束点
         
+        // 4. 解析输出并进行后处理
         auto& output = output_tensors[0];
         auto shape = output.GetTensorTypeAndShapeInfo().GetShape();
         
@@ -122,11 +128,24 @@ bool ArmorDetector::detect(const cv::Mat& frame, std::vector<ArmorObject>& resul
         cv::Mat output_transposed = output_mat.t();  // 转置后变成 [8400, 10]
         
         postprocess(output_transposed, frame.size(), results);
-        
+        t_post_end = cv::getTickCount(); // 记录后处理结束点
+
     } catch (const std::exception& e) {
         std::cerr << "ONNX Runtime inference failed: " << e.what() << std::endl;
         return false;
     }
+    // --- 计算并打印各环节详细耗时 (单位: 毫秒 ms) ---
+    double freq = cv::getTickFrequency();
+    double t_pre   = (t_pre_end - t_start) / freq * 1000.0;
+    double t_infer = (t_infer_end - t_pre_end) / freq * 1000.0;
+    double t_post  = (t_post_end - t_infer_end) / freq * 1000.0;
+    double t_total = (t_post_end - t_start) / freq * 1000.0;
+
+    std::cout << std::fixed << std::setprecision(2);
+    std::cout << "[Profile] Pre: " << t_pre << "ms | "
+              << "Infer: " << t_infer << "ms | "
+              << "Post: " << t_post << "ms | "
+              << "Total: " << t_total << "ms" << std::endl;
 
     return true;
 }
