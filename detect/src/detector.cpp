@@ -227,7 +227,7 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         ArmorObject obj;
         obj.bbox       = cv::Rect2f(boxes[idx]);
         obj.confidence = confidences[idx];
-        obj.class_id   = class_ids[idx]; // 成功修复！现在能分清红蓝和数字了
+        obj.class_id   = class_ids[idx]; 
         obj.center     = cv::Point2f(boxes[idx].x + boxes[idx].width / 2.0f,
                                      boxes[idx].y + boxes[idx].height / 2.0f);
         results.push_back(obj);
