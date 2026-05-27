@@ -33,15 +33,14 @@ void Visualizer::drawDetections(cv::Mat& frame,
             target_name = "id_" + std::to_string(obj.class_id);
         }
         // 格式化输出到控制台，例如：[TARGET] red3 Center Coordinate: (412, 235)
-        // 提示：如果你的结构体里类名变量不叫 class_name，请根据头文件改成对应的变量名（如 label 或 type）
-        std::cout << "[TARGET] " << obj.class_id
+       std::cout << "[TARGET] " << target_name
                   << " Center Coordinate: (" << center_x << ", " << center_y << ")" << std::endl;
-        }
+        
 
     /*
     (void)frame;
     (void)detections;*/
-}
+}}
 
 void Visualizer::drawCenters(cv::Mat& frame, const FrameResult& result) {
     for (int i = 0; i < result.detected_count; i++) {

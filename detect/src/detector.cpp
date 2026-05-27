@@ -237,5 +237,4 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         obj.center     = cv::Point2f(boxes[idx].x + boxes[idx].width / 2.0f,
                                      boxes[idx].y + boxes[idx].height / 2.0f);
         results.push_back(obj);
-    }
-}
+    }}
