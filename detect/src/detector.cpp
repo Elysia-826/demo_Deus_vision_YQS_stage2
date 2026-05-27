@@ -96,13 +96,16 @@ bool ArmorDetector::detect(const cv::Mat& frame, std::vector<ArmorObject>& resul
     results.clear();
     if (frame.empty() || !session_) return false;
 
-    // 定义计时变量
-    int64 t_start = cv::getTickCount();
-    int64 t_pre_end, t_infer_end, t_post_end;
+    // 使用高精度稳定纪元时钟，全量锁死时间节点，物理杜绝脏数据
+    auto t_start = std::chrono::steady_clock::now();
 
     cv::Mat blob = preprocess(frame);
 
-    // 1. 准备输入张量与内存信息 (使用 OrtArenaAllocator 允许 ORT 内部管理 GPU 与 CPU 的高效映射)
+    // 捕捉预处理结束点
+    auto t_pre_end = std::chrono::steady_clock::now();
+
+    // 1. 准备输入张量与内存信息 
+    //实车部署使用 OrtMemTypeDefault + CreateCpu 配合显式连续内存保护，确保显存访问安全且高效
     std::vector<int64_t> input_shape = {1, 3, input_size_.height, input_size_.width};
     size_t input_tensor_size = blob.total(); 
     
@@ -114,12 +117,15 @@ bool ArmorDetector::detect(const cv::Mat& frame, std::vector<ArmorObject>& resul
     const char* input_names[] = {"images"};
     const char* output_names[] = {"output0"};
 
+    auto t_infer_end = std::chrono::steady_clock::now(); // 初始化声明
+    auto t_post_end  = std::chrono::steady_clock::now(); // 初始化声明
+
     try {
         // 3. 执行推理
         auto output_tensors = session_->Run(Ort::RunOptions{nullptr},
                                             input_names, &input_tensor, 1,
                                             output_names, 1);
-        t_infer_end = cv::getTickCount(); // 记录模型推理结束点
+        t_infer_end = std::chrono::steady_clock::now(); //精准记录模型推理结束点
         
         // 4. 解析输出并进行后处理
         auto& output = output_tensors[0];
@@ -134,18 +140,18 @@ bool ArmorDetector::detect(const cv::Mat& frame, std::vector<ArmorObject>& resul
         cv::Mat output_transposed = output_mat.t();  // 转置后变成 [8400, 10]
         
         postprocess(output_transposed, frame.size(), results);
-        t_post_end = cv::getTickCount(); // 记录后处理结束点
+        t_post_end = std::chrono::steady_clock::now(); //精准记录后处理结束点
 
     } catch (const std::exception& e) {
         std::cerr << "ONNX Runtime inference failed: " << e.what() << std::endl;
         return false;
     }
     // --- 计算并打印各环节详细耗时 (单位: 毫秒 ms) ---
-    double freq = cv::getTickFrequency();
-    double t_pre   = (t_pre_end - t_start) / freq * 1000.0;
-    double t_infer = (t_infer_end - t_pre_end) / freq * 1000.0;
-    double t_post  = (t_post_end - t_infer_end) / freq * 1000.0;
-    double t_total = (t_post_end - t_start) / freq * 1000.0;
+    // 使用 std::chrono 标准耗时测算机制
+    float t_pre   = std::chrono::duration<float, std::milli>(t_pre_end - t_start).count();
+    float t_infer = std::chrono::duration<float, std::milli>(t_infer_end - t_pre_end).count();
+    float t_post  = std::chrono::duration<float, std::milli>(t_post_end - t_infer_end).count();
+    float t_total = std::chrono::duration<float, std::milli>(t_post_end - t_start).count();
 
     std::cout << std::fixed << std::setprecision(2);
     std::cout << "[Profile] Pre: " << t_pre << "ms | "
