@@ -2,6 +2,14 @@
 
 本项目为 RoboMaster 视觉组阶段二考核自瞄部署系统。针对第一阶段暗室模型在实际战场演进中所暴露的 **环境域偏移（Domain Shift）**、**小目标多尺度特征丢失** 以及 **高频色彩误报** 等工业级痛点，进行了全量的数据集解耦重构与 C++ 工程层的高性能算力压榨。
 
+**编译与运行* :
+
+cd C:\Users\YQS\Desktop\demo_Deus_vision_YQS_stage2\detect\build
+
+cmake --build . --config Release
+
+.\Release\armor_detect.exe
+
 ---
 ## 前期环境配置问题与调优
 
