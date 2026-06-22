@@ -6,6 +6,7 @@
 #include <memory>
 #include <onnxruntime_cxx_api.h>   // 改为onnxruntime的 C++ API 头文件
 
+
 /// 单个装甲板检测结果
 struct ArmorObject {
     cv::Rect2f bbox;
@@ -37,7 +38,7 @@ private:
     cv::Mat preprocess(const cv::Mat& frame);
     // 修改为接收 Ort::Value 或 raw 数据的后处理逻辑
     // 确保第一个参数写成 const cv::Mat& output
-    void postprocess(const cv::Mat& output, const cv::Size& frame_size, std::vector<ArmorObject>& results);
+    void postprocess(const cv::Mat& output, const cv::Mat& frame, std::vector<ArmorObject>& results);
     
     // ONNX Runtime 核心成员
     Ort::Env env_;

@@ -4,6 +4,16 @@
 #include <algorithm>
 #include <iostream>
 #include <cmath>
+#include <iomanip>
+#include <memory>
+#include <chrono>
+#include <vector>
+#include <numeric>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include <vector>
+
+static cv::Point2f computeArmorCenter(const cv::Mat& roi);
 
 ArmorDetector::ArmorDetector() 
     : env_(ORT_LOGGING_LEVEL_WARNING, "armor_detect"), 
@@ -139,7 +149,7 @@ bool ArmorDetector::detect(const cv::Mat& frame, std::vector<ArmorObject>& resul
         cv::Mat output_mat(num_channels, num_detections, CV_32FC1, output.GetTensorMutableData<float>());
         cv::Mat output_transposed = output_mat.t();  // 转置后变成 [8400, 10]
         
-        postprocess(output_transposed, frame.size(), results);
+        postprocess(output_transposed, frame, results);
         t_post_end = std::chrono::steady_clock::now(); //精准记录后处理结束点
 
     } catch (const std::exception& e) {
@@ -166,9 +176,11 @@ bool ArmorDetector::detect(const cv::Mat& frame, std::vector<ArmorObject>& resul
 // 后处理：提取最大置信度与其分类，坐标还原，NMS
 // ============================================================
 void ArmorDetector::postprocess(const cv::Mat& output,
-                                const cv::Size& frame_size,
+                                const cv::Mat& frame,
                                 std::vector<ArmorObject>& results) {
     // 此时入参的 output 经过了转置，是 [8400, 10] 的矩阵（每行代表一个检测框锚点）
+    // 从 frame 中直接获取 size
+    const cv::Size frame_size = frame.size(); 
     const int num_detections = output.rows;
     const int num_channels = output.cols; 
 
@@ -234,7 +246,86 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         obj.bbox       = cv::Rect2f(boxes[idx]);
         obj.confidence = confidences[idx];
         obj.class_id   = class_ids[idx]; 
-        obj.center     = cv::Point2f(boxes[idx].x + boxes[idx].width / 2.0f,
-                                     boxes[idx].y + boxes[idx].height / 2.0f);
+    //(1)获取当前检测框
+        cv::Rect r = boxes[idx];
+    //(2)从原图中裁剪出检测框对应的 ROI 区域
+        cv::Mat roi = frame(r);
+    //(3)计算装甲板中心点坐标
+        cv::Point2f center = computeArmorCenter(roi);
+    //(4)将中心点坐标转换回原图坐标系
+        cv::Point2f armor_center = center; 
+        armor_center.x +=r.x;
+        armor_center.y +=r.y;
+    //(5)保存结果
+        obj.center = armor_center;
+
+
         results.push_back(obj);
     }}
+
+    //从ROI中提取装甲板几何中心,输入roi,输出roi坐标系
+    static cv::Point2f computeArmorCenter(const cv::Mat& roi) {
+        using namespace cv;
+        //1. 转换到 HSV 色彩空间,取亮度通道
+        Mat hsv;
+        cvtColor(roi, hsv, COLOR_BGR2HSV);
+
+        std::vector<Mat> channels;
+        split(hsv, channels);
+        Mat v_channel = channels[2]; // 亮度通道,v通道等于亮度,此时灯条理论上最亮
+
+        //2. 二值化提取亮区
+        Mat binary;
+        threshold(v_channel, binary, 0, 255, THRESH_BINARY|THRESH_OTSU); //Otsu自动阈值,适应光照变化
+
+        //3.形态学处理去除噪点+连接灯条
+        Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
+        morphologyEx(binary, binary, MORPH_OPEN, kernel); //开运算去除小噪点
+
+        //4.按中线分隔左右灯条
+        int mid_x = binary.cols / 2;
+        Mat left_half = binary(Rect(0, 0, mid_x, binary.rows));
+        Mat right_half = binary(Rect(mid_x, 0, binary.cols - mid_x, binary.rows));
+
+        //5.从二值图提取极值点
+        auto extractPoints = [](const Mat& img, int offsetX){
+            std::vector<Point2f>pts;
+            std::vector<Point> nz;
+            findNonZero(img, nz);//找所有白色像素点(灯条区域)
+            if(nz.empty()) return pts; //无灯条区域
+            //初始化极值点
+            Point top = nz[0];
+            Point bottom = nz[0];
+            //遍历所有像素点,找到顶部和底部极值点(灯条的上下边界)
+            for(auto& p : nz){
+                if(p.y < top.y) top = p; //更新顶部极值点
+                if(p.y > bottom.y) bottom = p; //更新底部极值点
+            }
+            //保存两个关键点
+            pts.push_back(Point2f(top.x + offsetX, top.y));
+            pts.push_back(Point2f(bottom.x + offsetX, bottom.y));
+            return pts;
+        };
+
+        //6.分别处理左右灯条
+        std::vector<Point2f> left_points = extractPoints(left_half, 0);
+        std::vector<Point2f> right_points = extractPoints(right_half, mid_x);
+
+        //7.容错处理,防止检测失败导致的空指针访问
+        if(left_points.size() < 2 || right_points.size() < 2){
+            return Point2f(roi.cols/2.0f, roi.rows/2.0f); //返回ROI中心点作为备选方案
+        }
+
+        //8.合并四点(装甲板结构)
+        std::vector<Point2f> all_points;
+        all_points.insert(all_points.end(), left_points.begin(), left_points.end());
+        all_points.insert(all_points.end(), right_points.begin(), right_points.end());
+
+        //9.计算装甲板中心点(四点的平均值)
+        Point2f center(0, 0);
+        for(const auto& pt : all_points){
+            center += pt;
+        }
+        center *= (1.0f / all_points.size()); //平均值
+        return center;
+    }
