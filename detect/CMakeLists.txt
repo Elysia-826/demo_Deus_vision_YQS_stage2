@@ -40,6 +40,7 @@ set(SOURCES
     src/detector.cpp
     src/target_selector.cpp
     src/visualizer.cpp
+    src/ekf_predictor.cpp 
 )
 
 # 根据开关动态追加裁判与评估模块

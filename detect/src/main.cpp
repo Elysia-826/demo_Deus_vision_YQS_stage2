@@ -1,6 +1,7 @@
 #include "detector.h"
 #include "target_selector.h"
 #include "visualizer.h"
+#include "ekf_predictor.h"
 
 #ifdef ENABLE_JUDGE
 #include "judge.h"
@@ -32,6 +33,10 @@ int main(int argc, char** argv) {
     // ========== 2. 初始化其他模块 ==========
     TargetSelector selector;
     Visualizer visualizer;
+    // 初始化 EKF 预测器
+    EKFPredictor predictor; 
+    // 记录上一帧的时间，用于计算 dt
+    auto last_frame_time = std::chrono::steady_clock::now();
 
 #ifdef ENABLE_JUDGE
     Judge judge;
@@ -90,6 +95,38 @@ int main(int argc, char** argv) {
             detected_frames++;
         }
 
+        // ==========================================
+        // 核心新增：EKF 滤波与预测逻辑 
+        // ==========================================
+        auto current_frame_time = std::chrono::steady_clock::now();
+        double dt = std::chrono::duration<double>(current_frame_time - last_frame_time).count();
+        last_frame_time = current_frame_time;
+        
+        if (dt > 0.1) dt = 0.033; // 防止 dt 异常
+
+        cv::Point2f ekf_smooth_pos(0, 0);
+        
+        //判断 detected_count 是否大于 0
+        if (result.detected_count > 0) {
+            // 【情况 A：检测到了目标】
+            // 直接取 centers 数组的第一个元素 (索引 0) 作为观测值
+            // 前提：你的 TargetSelector 会把最想打的目标放在索引 0
+            cv::Point2f measured_center = result.centers[0]; 
+            
+            if (!predictor.isInitialized()) {
+                predictor.init(measured_center);
+                ekf_smooth_pos = measured_center;
+            } else {
+                predictor.predict(dt);
+                ekf_smooth_pos = predictor.update(measured_center);
+            }
+        } else {
+            // 【情况 B：这帧没检测到目标 (丢失/被遮挡)】
+            if (predictor.isInitialized()) {
+                ekf_smooth_pos = predictor.predict(dt); // 纯靠 EKF 预测
+            }
+        }
+
         // 4.3 评估 & 日志
 // 这里必须传入 frame_id（视频绝对帧序号），而不是 total_frames（处理帧计数）。
 // 原因：
@@ -107,6 +144,13 @@ int main(int argc, char** argv) {
          // 4.4 可视化
         visualizer.drawDetections(frame, detections);
         visualizer.drawCenters(frame, result);
+
+        // 在画面上画出 EKF 的平滑/预测点 (黄色圆圈)，方便对比原始检测点
+        if (predictor.isInitialized()) {
+            cv::circle(frame, ekf_smooth_pos, 8, cv::Scalar(0, 255, 255), 2); 
+            cv::putText(frame, "EKF", cv::Point(ekf_smooth_pos.x + 10, ekf_smooth_pos.y), 
+                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 255), 1);
+        }
 
         // 4.5 计算 FPS
         auto now = std::chrono::steady_clock::now();
