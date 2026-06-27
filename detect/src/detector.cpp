@@ -264,7 +264,7 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         cv::Point2f roi_center;
         
         if (extractArmorCornersFast(roi, roi_corners, roi_center)) {
-            // 【情况 A：传统 CV 提取成功】
+            // 【情况 A：传统 CV 提取成功,四角点完整,可用于PNP】
             // 将 ROI 局部坐标系下的点，转换回【原图全局坐标系】
             for (auto& pt : roi_corners) {
                 pt.x += r.x;
@@ -275,13 +275,15 @@ void ArmorDetector::postprocess(const cv::Mat& output,
             
             obj.corners = roi_corners; // 保存 4 个角点给 PnP
             obj.center = roi_center;   // 保存中心点给 EKF
+             // 只有完美的、满足 PnP 要求的目标，才加入最终结果
+            results.push_back(obj); 
         } else {
             // 【情况 B：传统 CV 提取失败 (如严重遮挡、反光过曝)】
             // 车端 EKF 友好兜底策略：
             // 1. 不要输出 (-1,-1) 或乱飘的噪点，直接把 YOLO 框的几何中心喂给 EKF。
             // 2. corners 留空。后续 PnP 模块判断 corners 为空时，跳过本帧解算，
             //    仅依靠 EKF 的预测方程 (Predict) 维持目标轨迹，防止滤波发散。
-            obj.center = cv::Point2f(r.x + r.width / 2.0f, r.y + r.height / 2.0f);
+            //obj.center = cv::Point2f(r.x + r.width / 2.0f, r.y + r.height / 2.0f);
             // obj.corners 默认就是空的，不需要额外操作
         }
 
