@@ -13,6 +13,7 @@ struct ArmorObject {
     int class_id;
     float confidence;
     cv::Point2f center;
+     std::vector<cv::Point2f> corners;   // 4个角点
 };
 
 /**

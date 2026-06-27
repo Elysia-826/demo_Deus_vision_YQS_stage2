@@ -13,7 +13,9 @@
 #include <opencv2/imgproc.hpp>
 #include <vector>
 
-static cv::Point2f computeArmorCenter(const cv::Mat& roi);
+static bool extractArmorCornersFast(const cv::Mat& roi, 
+                                    std::vector<cv::Point2f>& corners, 
+                                    cv::Point2f& center);
 
 ArmorDetector::ArmorDetector() 
     : env_(ORT_LOGGING_LEVEL_WARNING, "armor_detect"), 
@@ -236,6 +238,7 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         class_ids.push_back(label_id);
     }
 
+
     // 4. 执行 OpenCV 的非极大值抑制（NMS）
     std::vector<int> indices;
     cv::dnn::NMSBoxes(boxes, confidences, conf_threshold_, nms_threshold_, indices);
@@ -246,105 +249,155 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         obj.bbox       = cv::Rect2f(boxes[idx]);
         obj.confidence = confidences[idx];
         obj.class_id   = class_ids[idx]; 
-    //(1)获取当前检测框
+        //(1)获取当前检测框
         cv::Rect r = boxes[idx];
-    //(2)从原图中裁剪出检测框对应的 ROI 区域
-        cv::Mat roi = frame(r);
-    //(3)计算装甲板中心点坐标
-        cv::Point2f center = computeArmorCenter(roi);
-    //(4)将中心点坐标转换回原图坐标系
-        cv::Point2f armor_center = center; 
-        armor_center.x +=r.x;
-        armor_center.y +=r.y;
-    //(5)保存结果
-        obj.center = armor_center;
+        // 边界保护
+        // YOLO 偶尔会输出超出图像边界的框，直接裁剪会导致 cv::Mat 崩溃。
+        // 这里将框强制限制在原图尺寸内，车端防崩溃必备！
+        r &= cv::Rect(0, 0, frame.cols, frame.rows);
+        if (r.width <= 0 || r.height <= 0) continue; // 如果框被裁没了，直接跳过
 
+        //(2)从原图中裁剪出检测框对应的 ROI 区域
+        cv::Mat roi = frame(r);
+       // (3) 调用新的车端特化提取函数
+        std::vector<cv::Point2f> roi_corners;
+        cv::Point2f roi_center;
+        
+        if (extractArmorCornersFast(roi, roi_corners, roi_center)) {
+            // 【情况 A：传统 CV 提取成功】
+            // 将 ROI 局部坐标系下的点，转换回【原图全局坐标系】
+            for (auto& pt : roi_corners) {
+                pt.x += r.x;
+                pt.y += r.y;
+            }
+            roi_center.x += r.x;
+            roi_center.y += r.y;
+            
+            obj.corners = roi_corners; // 保存 4 个角点给 PnP
+            obj.center = roi_center;   // 保存中心点给 EKF
+        } else {
+            // 【情况 B：传统 CV 提取失败 (如严重遮挡、反光过曝)】
+            // 车端 EKF 友好兜底策略：
+            // 1. 不要输出 (-1,-1) 或乱飘的噪点，直接把 YOLO 框的几何中心喂给 EKF。
+            // 2. corners 留空。后续 PnP 模块判断 corners 为空时，跳过本帧解算，
+            //    仅依靠 EKF 的预测方程 (Predict) 维持目标轨迹，防止滤波发散。
+            obj.center = cv::Point2f(r.x + r.width / 2.0f, r.y + r.height / 2.0f);
+            // obj.corners 默认就是空的，不需要额外操作
+        }
 
         results.push_back(obj);
-    }}
-
-    //从ROI中提取装甲板几何中心,输入roi,输出roi坐标系
-    static cv::Point2f computeArmorCenter(const cv::Mat& roi) {
-        using namespace cv;
-        //1. 转换到 HSV 色彩空间,取亮度通道
-        Mat hsv;
-        cvtColor(roi, hsv, COLOR_BGR2HSV);
-
-        std::vector<Mat> channels;
-        split(hsv, channels);
-        Mat v_channel = channels[2]; // 亮度通道,v通道等于亮度,此时灯条理论上最亮
-
-        //2. 二值化提取亮区
-        Mat binary;
-        threshold(v_channel, binary, 0, 255, THRESH_BINARY|THRESH_OTSU); //Otsu自动阈值,适应光照变化
-
-        //3.形态学处理去除噪点+连接灯条
-        Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
-        morphologyEx(binary, binary, MORPH_OPEN, kernel); //开运算去除小噪点
-
-        //4.按中线分隔左右灯条
-        int mid_x = binary.cols / 2;
-        Mat left_half = binary(Rect(0, 0, mid_x, binary.rows));
-        Mat right_half = binary(Rect(mid_x, 0, binary.cols - mid_x, binary.rows));
-
-        //5.从二值图提取极值点
-        auto extractPoints = [](const Mat& img, int offsetX){
-            std::vector<Point2f>pts;
-            std::vector<Point> nz;
-            findNonZero(img, nz);//找所有白色像素点(灯条区域)
-            if (nz.size()<20){
-                return std::vector<Point2f>(); //灯条区域像素点过少,直接返回空
-            }
-            if(nz.empty()) return pts; //无灯条区域
-            //初始化极值点
-            Point top = nz[0];
-            Point bottom = nz[0];
-            //遍历所有像素点,找到顶部和底部极值点(灯条的上下边界)
-            for(auto& p : nz){
-                if(p.y < top.y) top = p; //更新顶部极值点
-                if(p.y > bottom.y) bottom = p; //更新底部极值点
-            }
-            //保存两个关键点
-            pts.push_back(Point2f(top.x + offsetX, top.y));
-            pts.push_back(Point2f(bottom.x + offsetX, bottom.y));
-            return pts;
-        };
-
-        //6.分别处理左右灯条
-        std::vector<Point2f> left_points = extractPoints(left_half, 0);
-        std::vector<Point2f> right_points = extractPoints(right_half, mid_x);
-
-        //保证左右灯条都存在才输出中心点
-        if(left_points.size()!=2||right_points.size()!=2){
-            return cv::Point2f(-1, -1); //返回无效点,表示检测失败
-            }
-
-
-        //7.容错处理,防止检测失败导致的空指针访问
-        if(left_points.size() < 2 || right_points.size() < 2){
-            return Point2f(roi.cols/2.0f, roi.rows/2.0f); //返回ROI中心点作为备选方案
-        }
-        
-        //结构过滤,防止单灯条误触发
-        float left_height = left_points[0].y - left_points[1].y;
-        float right_height = right_points[0].y - right_points[1].y;
-        if(left_height < 10 || right_height < 10){
-            return Point2f(-1,-1); //灯条高度过小,可能是噪点,返回无效点
-        }
-        if(std::abs(left_height - right_height) > 15){
-            return Point2f(-1,-1); //左右灯条高度差异过大,可能是误检,返回无效点
-        }
-
-        //8.合并四点(装甲板结构)
-        std::vector<Point2f> all_points;
-        all_points.insert(all_points.end(), left_points.begin(), left_points.end());
-        all_points.insert(all_points.end(), right_points.begin(), right_points.end());
-
-        //9.计算装甲板中心点(四点的平均值)
-        Point2f center(0, 0);
-        for(const auto& pt : all_points){
-            center += pt;
-        }
-        center *= 0.25f; //平均值
-        return center;
     }
+}
+
+    // 在线矩计算 + 主方向投影提取四角点 (零动态分配, 确定延迟)
+    // 返回 true 成功, false 失败
+static bool extractArmorCornersFast(const cv::Mat& roi, 
+                                    std::vector<cv::Point2f>& corners, 
+                                    cv::Point2f& center) {
+    using namespace cv;
+    if (roi.empty()) return false;
+
+    // 限制 ROI 最大尺寸，防止极端大框拖垮 CPU (比赛常用 120x80)
+    const int MAX_W = 120, MAX_H = 80;
+    Mat work_roi = roi;
+    if (roi.cols > MAX_W || roi.rows > MAX_H) {
+        cv::resize(roi, work_roi, Size(MAX_W, MAX_H), 0, 0, INTER_LINEAR);
+    }
+
+    // 1. 灰度 + Otsu 二值化
+    Mat gray, binary;
+    cvtColor(work_roi, gray, COLOR_BGR2GRAY);
+    threshold(gray, binary, 0, 255, THRESH_BINARY | THRESH_OTSU);
+
+    // 反色保护：白像素超 40% 说明背景过曝，反转图像
+    if (countNonZero(binary) > binary.total() * 0.4) {
+        bitwise_not(binary, binary);
+    }
+
+    // 2. 在线计算一阶矩 & 二阶矩 (零分配, 单次遍历)
+    double m00 = 0, m10 = 0, m01 = 0, m20 = 0, m02 = 0, m11 = 0;
+    int valid_pixels = 0;
+
+    for (int y = 0; y < binary.rows; ++y) {
+        const uchar* row = binary.ptr<uchar>(y);
+        for (int x = 0; x < binary.cols; ++x) {
+            if (row[x] > 0) {
+                m00 += 1;
+                m10 += x;
+                m01 += y;
+                m20 += x * x;
+                m02 += y * y;
+                m11 += x * y;
+                valid_pixels++;
+            }
+        }
+    }
+
+    // 像素过少直接失败 (避免除零和噪点干扰)
+    if (valid_pixels < 40) return false;
+
+    // 3. 计算质心 (中心点)
+    double cx = m10 / m00;
+    double cy = m01 / m00;
+    center = Point2f(static_cast<float>(cx), static_cast<float>(cy));
+
+    // 4. 计算协方差矩阵 & 主方向 (PCA 原理)
+    double u20 = m20 / m00 - cx * cx;
+    double u02 = m02 / m00 - cy * cy;
+    double u11 = m11 / m00 - cx * cy;
+    
+    double angle = 0.5 * atan2(2 * u11, u20 - u02); // 装甲板主方向弧度
+    float cos_a = cosf(angle);
+    float sin_a = sinf(angle);
+
+    // 5. 沿主方向投影，找四个极值点 (替代脆弱的四象限法)
+    float min_proj_x = 1e9f, max_proj_x = -1e9f;
+    float min_proj_y = 1e9f, max_proj_y = -1e9f;
+    
+    // 投影坐标系下的极值点 (在原图坐标系中记录)
+    Point2f pt_tl, pt_tr, pt_br, pt_bl;
+
+    for (int y = 0; y < binary.rows; ++y) {
+        const uchar* row = binary.ptr<uchar>(y);
+        for (int x = 0; x < binary.cols; ++x) {
+            if (row[x] > 0) {
+                // 将像素点转换到以质心为原点、主方向为轴的局部坐标系
+                float dx = x - cx;
+                float dy = y - cy;
+                float local_x =  dx * cos_a + dy * sin_a; // 沿灯条长度方向
+                float local_y = -dx * sin_a + dy * cos_a; // 沿灯条宽度方向
+
+                // 找局部坐标系下的四个极值
+                if (local_x + local_y < min_proj_x + min_proj_y) { min_proj_x = local_x; min_proj_y = local_y; pt_tl = Point2f(x, y); }
+                if (local_x - local_y > max_proj_x - min_proj_y) { max_proj_x = local_x; min_proj_y = local_y; pt_tr = Point2f(x, y); }
+                if (local_x + local_y > max_proj_x + max_proj_y) { max_proj_x = local_x; max_proj_y = local_y; pt_br = Point2f(x, y); }
+                if (local_x - local_y < min_proj_x - max_proj_y) { min_proj_x = local_x; max_proj_y = local_y; pt_bl = Point2f(x, y); }
+            }
+        }
+    }
+
+    // 6. 几何校验 (防止单灯条或严重遮挡误输出)
+    float width  = std::hypotf(pt_tr.x - pt_tl.x, pt_tr.y - pt_tl.y);
+    float height = std::hypotf(pt_bl.x - pt_tl.x, pt_bl.y - pt_tl.y);
+    if (width < 15.0f || height < 8.0f || width / (height + 1e-5f) < 1.2f) {
+        return false; // 不符合装甲板物理比例
+    }
+
+    // 7. 输出 PnP 严格顺序: 左上, 右上, 右下, 左下
+    corners.clear();
+    corners.reserve(4);
+    corners.push_back(pt_tl);
+    corners.push_back(pt_tr);
+    corners.push_back(pt_br);
+    corners.push_back(pt_bl);
+
+    // 如果之前 resize 过，需要将坐标映射回原始 ROI 尺度
+    if (work_roi.size() != roi.size()) {
+        float sx = roi.cols / (float)work_roi.cols;
+        float sy = roi.rows / (float)work_roi.rows;
+        for (auto& pt : corners) { pt.x *= sx; pt.y *= sy; }
+        center.x *= sx; center.y *= sy;
+    }
+
+    return true;
+}
