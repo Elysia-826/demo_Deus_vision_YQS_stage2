@@ -292,6 +292,9 @@ void ArmorDetector::postprocess(const cv::Mat& output,
             std::vector<Point2f>pts;
             std::vector<Point> nz;
             findNonZero(img, nz);//找所有白色像素点(灯条区域)
+            if (nz.size()<20){
+                return std::vector<Point2f>(); //灯条区域像素点过少,直接返回空
+            }
             if(nz.empty()) return pts; //无灯条区域
             //初始化极值点
             Point top = nz[0];
@@ -311,9 +314,25 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         std::vector<Point2f> left_points = extractPoints(left_half, 0);
         std::vector<Point2f> right_points = extractPoints(right_half, mid_x);
 
+        //保证左右灯条都存在才输出中心点
+        if(left_points.size()!=2||right_points.size()!=2){
+            return cv::Point2f(-1, -1); //返回无效点,表示检测失败
+            }
+
+
         //7.容错处理,防止检测失败导致的空指针访问
         if(left_points.size() < 2 || right_points.size() < 2){
             return Point2f(roi.cols/2.0f, roi.rows/2.0f); //返回ROI中心点作为备选方案
+        }
+        
+        //结构过滤,防止单灯条误触发
+        float left_height = left_points[0].y - left_points[1].y;
+        float right_height = right_points[0].y - right_points[1].y;
+        if(left_height < 10 || right_height < 10){
+            return Point2f(-1,-1); //灯条高度过小,可能是噪点,返回无效点
+        }
+        if(std::abs(left_height - right_height) > 15){
+            return Point2f(-1,-1); //左右灯条高度差异过大,可能是误检,返回无效点
         }
 
         //8.合并四点(装甲板结构)
@@ -326,6 +345,6 @@ void ArmorDetector::postprocess(const cv::Mat& output,
         for(const auto& pt : all_points){
             center += pt;
         }
-        center *= (1.0f / all_points.size()); //平均值
+        center *= 0.25f; //平均值
         return center;
     }
