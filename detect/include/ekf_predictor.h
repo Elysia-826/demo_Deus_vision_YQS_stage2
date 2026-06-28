@@ -2,6 +2,7 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <cmath>
+#include <vector>
 /**
  * @brief EKF 预测模块 (大二扩展)
  *
@@ -21,50 +22,70 @@ class EKFPredictor {
     // 模型枚举：CA(平移/匀加速), CTRV(旋转/小陀螺)
     enum ModelType { CA, CTRV };
 
+    // 【内部结构体】：封装单个目标的 EKF 状态与数学模型
+    struct Track {
+        int id;
+        ModelType current_model;
+        bool is_initialized;
+        
+        // CA 模型状态 (6维)
+        cv::Mat x_ca, P_ca, F_ca, H_ca, Q_ca, R;
+        // CTRV 模型状态 (5维)
+        cv::Mat x_ctrv, P_ctrv, H_ctrv, Q_ctrv;
+        
+        cv::Point2f smoothed_pos;
+        int lost_frames;
+        int hit_frames;
+        bool is_confirmed; // 是否已确认为稳定目标（防止误检闪烁）
+        
+        // 单目标核心方法
+        void initTrack(const cv::Point2f& initial_pos, const cv::Mat& R_mat, const cv::Mat& Q_ca_mat, const cv::Mat& Q_ctrv_mat);
+        cv::Point2f predictTrack(double dt);
+        cv::Point2f updateTrack(const cv::Point2f& measurement);
+        cv::Point2f getPosition() const;
+        
+        // 内部数学运算
+        void predictCA(double dt);
+        void predictCTRV(double dt);
+        void updateCommon(const cv::Mat& z, cv::Mat& x, cv::Mat& P, const cv::Mat& H, const cv::Mat& R_mat);
+        void caToCtrv();
+        void ctrvToCa();
+        bool shouldSwitchToCTRV() const;
+        bool shouldSwitchToCA() const;
+    };
+
     EKFPredictor();
     
-    // 初始化（使用第一帧观测位置）
-    void init(const cv::Point2f& initial_pos);
+    // 【多目标核心接口】：传入当前帧所有检测到的中心点
+    void update(const std::vector<cv::Point2f>& measurements, double dt);
     
-    // 预测 & 更新
-    cv::Point2f predict(double dt);
-    cv::Point2f update(const cv::Point2f& measurement);
+    // 获取最佳打击目标 (距离 aim_point 最近的已确认目标)
+    cv::Point2f getBestTarget(const cv::Point2f& aim_point) const;
+    int getBestTargetID(const cv::Point2f& aim_point) const;
+    bool hasTarget() const;
     
-    // 热切换模型
-    void switchTo(ModelType target_model);
-    ModelType getCurrentModel() const { return current_model_; }
-
-    // 检查是否已初始化
-    bool isInitialized() const { return is_initialized_; }
-    
-    // 状态获取
-    cv::Point2f getPosition() const;
-    cv::Point2f getVelocity() const; // CA返回(vx,vy), CTRV返回(v*cos(yaw), v*sin(yaw))
-    double getAngularRate() const;   // 仅CTRV有效(小陀螺角速度), CA返回0
-
-    // 自动切换建议（基于运动特征）
-    bool shouldSwitchToCTRV() const;
-    bool shouldSwitchToCA() const;
+    // 获取所有轨迹 (用于可视化)
+    const std::vector<Track>& getTracks() const { return tracks_; }
 
 private:
-    ModelType current_model_;
-    bool is_initialized_;
-
-    // CA 模型状态 (6维): [x, y, vx, vy, ax, ay]
-    cv::Mat x_ca_, P_ca_, F_ca_, H_ca_, Q_ca_, R_;
+    std::vector<Track> tracks_;
+    int next_id_;
     
-    // CTRV 模型状态 (5维): [x, y, v, yaw, omega]
-    cv::Mat x_ctrv_, P_ctrv_, H_ctrv_, Q_ctrv_;
+    // 跟踪器参数
+    int max_lost_frames_;       // 允许丢失的最大帧数
+    int min_hit_frames_;        // 至少连续命中多少帧才确认为稳定目标
+    float max_match_distance_;  // 数据关联的最大距离阈值（像素）
     
-    // 内部预测/更新实现
-    void predictCA(double dt);
-    void predictCTRV(double dt);
-    void updateCommon(const cv::Mat& z, cv::Mat& x, cv::Mat& P, const cv::Mat& H, const cv::Mat& R);
+    // 全局噪声参数模板
+    cv::Mat R_;
+    cv::Mat Q_ca_;
+    cv::Mat Q_ctrv_;
     
-    // 状态转换与协方差安全重置
-    void caToCtrv();
-    void ctrvToCa();
-    
-    // 工具函数
+    // 数据关联算法
+    void associate(const std::vector<cv::Point2f>& measurements,
+                   std::vector<int>& matched_measurements,
+                   std::vector<int>& unmatched_tracks,
+                   std::vector<int>& unmatched_measurements);
+                   
     static double wrapAngle(double angle);
 };
